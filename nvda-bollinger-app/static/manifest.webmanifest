@@ -1,0 +1,42 @@
+{
+  "name": "Stock analysis",
+  "short_name": "Stock",
+  "description": "Bollinger, KD, RSI, MACD and technical screener for stocks.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f5f6f4",
+  "theme_color": "#0f766e",
+  "orientation": "any",
+  "categories": ["finance", "productivity"],
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "NVDA",
+      "short_name": "NVDA",
+      "description": "Open NVDA technical analysis.",
+      "url": "/?symbol=NVDA",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Strategy screener",
+      "short_name": "Screener",
+      "description": "Open the strategy screener.",
+      "url": "/#screener",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}

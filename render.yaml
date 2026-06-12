@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: stock-analysis
+    runtime: python
+    plan: free
+    region: singapore
+    buildCommand: python -m py_compile nvda-bollinger-app/server.py stock-analysis-skill-main/tools/bollinger_volume_strategy.py
+    startCommand: python nvda-bollinger-app/server.py --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeployTrigger: commit

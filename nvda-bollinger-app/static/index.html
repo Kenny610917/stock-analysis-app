@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>股票分析</title>
+    <meta name="theme-color" content="#0f766e" />
+    <meta name="application-name" content="Stock analysis" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Stock analysis" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icons/icon-192.png" sizes="192x192" />
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+    <link rel="stylesheet" href="/styles.css?v=dow1" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="workspace">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">規則型技術訊號</p>
+            <h1>股票分析</h1>
+          </div>
+          <div class="status-pill" id="connectionStatus">待命</div>
+        </header>
+
+        <form class="control-bar" id="controls">
+          <label>
+            <span>股票代號</span>
+            <input id="symbol" name="symbol" value="NVDA" autocomplete="off" />
+          </label>
+          <label>
+            <span>區間</span>
+            <select id="range" name="range">
+              <option value="3mo">3mo</option>
+              <option value="6mo" selected>6mo</option>
+              <option value="1y">1y</option>
+              <option value="2y">2y</option>
+            </select>
+          </label>
+          <label>
+            <span>列數</span>
+            <select id="last" name="last">
+              <option value="1">1</option>
+              <option value="5" selected>5</option>
+              <option value="10">10</option>
+              <option value="20">20</option>
+            </select>
+          </label>
+          <label>
+            <span>布林週期</span>
+            <input id="bandPeriod" name="bandPeriod" type="number" min="2" max="120" value="20" />
+          </label>
+          <label>
+            <span>標準差</span>
+            <input id="stdMultiplier" name="stdMultiplier" type="number" min="0.5" max="5" step="0.1" value="2.0" />
+          </label>
+          <label>
+            <span>量能均線</span>
+            <input id="volumePeriod" name="volumePeriod" type="number" min="2" max="120" value="20" />
+          </label>
+          <label>
+            <span>放量門檻</span>
+            <input id="volumeMultiplier" name="volumeMultiplier" type="number" min="0.5" max="10" step="0.1" value="1.5" />
+          </label>
+          <label>
+            <span>KD週期</span>
+            <input id="kdPeriod" name="kdPeriod" type="number" min="2" max="60" value="9" />
+          </label>
+          <label>
+            <span>K平滑</span>
+            <input id="kSmoothing" name="kSmoothing" type="number" min="1" max="20" value="3" />
+          </label>
+          <label>
+            <span>D平滑</span>
+            <input id="dSmoothing" name="dSmoothing" type="number" min="1" max="20" value="3" />
+          </label>
+          <label>
+            <span>RSI週期</span>
+            <input id="rsiPeriod" name="rsiPeriod" type="number" min="2" max="60" value="14" />
+          </label>
+          <label>
+            <span>MACD快線</span>
+            <input id="macdFast" name="macdFast" type="number" min="2" max="120" value="12" />
+          </label>
+          <label>
+            <span>MACD慢線</span>
+            <input id="macdSlow" name="macdSlow" type="number" min="3" max="180" value="26" />
+          </label>
+          <label>
+            <span>MACD訊號</span>
+            <input id="macdSignal" name="macdSignal" type="number" min="1" max="60" value="9" />
+          </label>
+          <label class="toggle">
+            <input id="autoRefresh" type="checkbox" />
+            <span>自動</span>
+          </label>
+          <button class="primary-button" type="submit" id="refreshButton">更新</button>
+        </form>
+
+        <section class="summary-grid">
+          <article class="signal-panel">
+            <div class="panel-heading">
+              <span id="latestDate">--</span>
+              <strong id="latestSignal">--</strong>
+            </div>
+            <div class="action-line">
+              <span id="latestAction">--</span>
+            </div>
+            <p id="latestReason">等待市場資料。</p>
+          </article>
+
+          <article class="metric-panel">
+            <span>收盤價</span>
+            <strong id="closeValue">--</strong>
+            <small id="barCount">--</small>
+          </article>
+
+          <article class="metric-panel">
+            <span>布林</span>
+            <strong id="bandPosition">--</strong>
+            <small id="bandValues">--</small>
+          </article>
+
+          <article class="metric-panel">
+            <span>成交量</span>
+            <strong id="volumeRatio">--</strong>
+            <small id="volumeValues">--</small>
+          </article>
+
+          <article class="metric-panel">
+            <span>量價 / 流動性</span>
+            <strong id="volumePriceSignal">--</strong>
+            <small id="turnoverValues">--</small>
+            <small id="volumePriceReason">--</small>
+          </article>
+
+          <article class="metric-panel kd-panel">
+            <span>KD</span>
+            <strong id="kdValues">--</strong>
+            <small id="kdSignal">--</small>
+            <small id="kdReason">--</small>
+          </article>
+
+          <article class="metric-panel">
+            <span>RSI</span>
+            <strong id="rsiValue">--</strong>
+            <small id="rsiSignal">--</small>
+            <small id="rsiReason">--</small>
+          </article>
+
+          <article class="metric-panel">
+            <span>MACD</span>
+            <strong id="macdValues">--</strong>
+            <small id="macdSignalSummary">--</small>
+            <small id="macdReason">--</small>
+          </article>
+
+          <article class="metric-panel">
+            <span>趨勢 / 支撐壓力</span>
+            <strong id="trendValues">--</strong>
+            <small id="structureValues">--</small>
+            <small id="trendReason">--</small>
+          </article>
+
+          <article class="metric-panel">
+            <span>箱型</span>
+            <strong id="boxSignal">--</strong>
+            <small id="boxValues">--</small>
+            <small id="boxReason">--</small>
+          </article>
+
+          <article class="metric-panel">
+            <span>道氏趨勢</span>
+            <strong id="dowSignal">--</strong>
+            <small id="dowValues">--</small>
+            <small id="dowReason">--</small>
+          </article>
+
+          <article class="metric-panel">
+            <span>可靠度</span>
+            <strong id="reliabilityScore">--</strong>
+            <small id="reliabilitySignal">--</small>
+            <small id="reliabilityReason">--</small>
+          </article>
+
+          <article class="metric-panel">
+            <span>交易計畫</span>
+            <strong id="planAction">--</strong>
+            <small id="planLevels">--</small>
+            <small id="planReason">--</small>
+          </article>
+        </section>
+
+        <section class="screener-section">
+          <div class="section-title">
+            <h2>策略選股</h2>
+            <span id="screenUpdated">--</span>
+          </div>
+          <form class="screener-controls" id="screenerControls">
+            <label>
+              <span>策略</span>
+              <select id="screenStrategy" name="screenStrategy">
+                <option value="bullish_consensus">技術偏多共振</option>
+                <option value="oversold_rebound">低檔反彈觀察</option>
+                <option value="trend_pullback">多頭回檔觀察</option>
+                <option value="box_breakout">箱型突破觀察</option>
+                <option value="dow_trend_follow">道氏趨勢順勢</option>
+                <option value="avoid_weakness">避開弱勢股</option>
+              </select>
+            </label>
+            <label>
+              <span>顯示數量</span>
+              <select id="screenLimit" name="screenLimit">
+                <option value="5">5</option>
+                <option value="10" selected>10</option>
+                <option value="20">20</option>
+              </select>
+            </label>
+            <label>
+              <span>股票池來源</span>
+              <select id="screenUniverse" name="screenUniverse">
+                <option value="custom" selected>自訂股票池</option>
+                <option value="us_all">美股全市場普通股</option>
+                <option value="tw_listed">台股上市</option>
+                <option value="tw_otc">台股上櫃</option>
+                <option value="tw_all">台股上市 + 上櫃</option>
+              </select>
+            </label>
+            <label>
+              <span>掃描上限</span>
+              <select id="screenMaxSymbols" name="screenMaxSymbols">
+                <option value="100" selected>100</option>
+                <option value="300">300</option>
+                <option value="1000">1000</option>
+                <option value="8000">全部 / 最多 8000</option>
+              </select>
+            </label>
+            <label class="symbols-field">
+              <span>股票池</span>
+              <textarea id="screenSymbols" rows="3">NVDA,AAPL,MSFT,AMZN,META,GOOGL,TSLA,AVGO,AMD,SMCI,PLTR,NFLX,ORCL,CRM,COST,TSM,ASML,QQQ,SPY</textarea>
+            </label>
+            <button class="primary-button" type="submit" id="screenButton">掃描</button>
+          </form>
+          <div class="table-wrap">
+            <table class="screener-table">
+              <thead>
+                <tr>
+                  <th>排名</th>
+                  <th>代號</th>
+                  <th>日期</th>
+                  <th>收盤</th>
+                  <th>策略分數</th>
+                  <th>策略符合</th>
+                  <th>可靠度</th>
+                  <th>共振</th>
+                  <th>交易計畫</th>
+                  <th>量價</th>
+                  <th>流動性</th>
+                  <th>箱型</th>
+                  <th>道氏</th>
+                  <th>RSI</th>
+                  <th>MACD</th>
+                  <th>趨勢</th>
+                  <th>理由</th>
+                </tr>
+              </thead>
+              <tbody id="screenRowsBody">
+                <tr>
+                  <td colspan="17" class="empty-cell">尚未掃描</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="table-section">
+          <div class="section-title">
+            <h2>最近資料</h2>
+            <span id="lastUpdated">--</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>日期</th>
+                  <th>收盤</th>
+                  <th>下軌</th>
+                  <th>中線</th>
+                  <th>上軌</th>
+                  <th>量比</th>
+                  <th>量價</th>
+                  <th>60日均成交金額</th>
+                  <th>流動性</th>
+                  <th>K</th>
+                  <th>D</th>
+                  <th>J</th>
+                  <th>RSI</th>
+                  <th>MACD</th>
+                  <th>柱狀體</th>
+                  <th>MA20</th>
+                  <th>MA60</th>
+                  <th>支撐</th>
+                  <th>壓力</th>
+                  <th>趨勢</th>
+                  <th>箱型</th>
+                  <th>箱頂</th>
+                  <th>箱底</th>
+                  <th>道氏</th>
+                  <th>階段</th>
+                  <th>入場</th>
+                  <th>停損</th>
+                  <th>目標</th>
+                  <th>操作</th>
+                  <th>布林訊號</th>
+                  <th>KD訊號</th>
+                  <th>RSI訊號</th>
+                  <th>MACD訊號</th>
+                  <th>可靠度</th>
+                </tr>
+              </thead>
+              <tbody id="rowsBody">
+                <tr>
+                  <td colspan="34" class="empty-cell">載入中...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <footer class="risk-note" id="riskNote">
+          本工具只提供規則型技術訊號研究，重點是把入場、停損、出場條件事先規則化；仍需搭配基本面與風險承受度，不構成投資建議。
+        </footer>
+      </section>
+    </main>
+    <script src="/app.js?v=dow1"></script>
+  </body>
+</html>

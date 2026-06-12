@@ -1,0 +1,78 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+/dist/
+/.wrangler/
+/.tools/
+
+# local runtime artifacts
+/.openai/
+/chrome-profile/
+/schematic_review_pages/
+cloudflared*.log
+
+# python cache
+__pycache__/
+*.py[cod]
+
+# unused workspace scaffold for this Render app
+/app/
+/build/
+/db/
+/drizzle/
+/examples/
+/public/
+/worker/
+drizzle.config.ts
+eslint.config.mjs
+next.config.ts
+package-lock.json
+package.json
+postcss.config.mjs
+README.md
+tsconfig.json
+vite.config.ts
+
+# unused upstream skill extras for this app
+/stock-analysis-skill-main/.github/
+/stock-analysis-skill-main/assets/
+/stock-analysis-skill-main/docs/
+/stock-analysis-skill-main/examples/
+/stock-analysis-skill-main/package.json
+/stock-analysis-skill-main/references/
+/stock-analysis-skill-main/templates/
