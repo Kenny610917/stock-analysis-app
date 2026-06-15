@@ -155,6 +155,7 @@ function screenParamsFromForm() {
 
 function renderLatest(data) {
   const latest = data.latest;
+  const isShortHistory = latest.historyMode === "SHORT_HISTORY";
   const klass = actionClass(latest.action);
   fields.latestDate.textContent = latest.date;
   fields.latestSignal.textContent = latest.signalText;
@@ -162,14 +163,18 @@ function renderLatest(data) {
   fields.latestAction.className = klass ? `action-${klass}` : "";
   fields.latestReason.textContent = latest.reasonText;
   fields.closeValue.textContent = formatNumber(latest.close, 2);
-  fields.barCount.textContent = `${formatInt(data.barsFetched)} 筆 / ${data.source}`;
+  fields.barCount.textContent = isShortHistory
+    ? `${formatInt(latest.availableBars)} / ${formatInt(latest.requiredBars)} 筆 / ${latest.historyModeText} / 完整度 ${formatNumber(latest.historyCompletenessPct, 0)}%`
+    : `${formatInt(data.barsFetched)} 筆 / ${data.source}`;
 
   const lower = formatNumber(latest.lower, 2);
   const middle = formatNumber(latest.middle, 2);
   const upper = formatNumber(latest.upper, 2);
-  if (latest.lower !== null && latest.close <= latest.lower) {
+  if (latest.lower === null || latest.middle === null || latest.upper === null) {
+    fields.bandPosition.textContent = isShortHistory ? "短歷史" : "資料不足";
+  } else if (latest.close <= latest.lower) {
     fields.bandPosition.textContent = "低於下軌";
-  } else if (latest.upper !== null && latest.close >= latest.upper) {
+  } else if (latest.close >= latest.upper) {
     fields.bandPosition.textContent = "高於上軌";
   } else {
     fields.bandPosition.textContent = "區間內";
@@ -177,9 +182,13 @@ function renderLatest(data) {
   fields.bandValues.textContent = `L ${lower} / M ${middle} / U ${upper}`;
 
   fields.volumeRatio.textContent = latest.volumeRatio === null ? "--" : `${formatNumber(latest.volumeRatio, 2)}x`;
-  fields.volumeValues.textContent = `${formatInt(latest.volume)} / 均量 ${formatInt(latest.volumeMa)}`;
+  fields.volumeValues.textContent = isShortHistory
+    ? `${formatInt(latest.volume)} / 成交金額 ${formatCompact(latest.turnover)}`
+    : `${formatInt(latest.volume)} / 均量 ${formatInt(latest.volumeMa)}`;
   fields.volumePriceSignal.textContent = latest.volumePriceSignalText || "--";
-  fields.turnoverValues.textContent = `成交金額 ${formatCompact(latest.turnover)} / 60日均 ${formatCompact(latest.turnoverMa)} / ${latest.liquidityText || "--"}`;
+  fields.turnoverValues.textContent = isShortHistory
+    ? `成交金額 ${formatCompact(latest.turnover)} / 尚無60日均值 / ${latest.historyRequirementText || "--"}`
+    : `成交金額 ${formatCompact(latest.turnover)} / 60日均 ${formatCompact(latest.turnoverMa)} / ${latest.liquidityText || "--"}`;
   fields.volumePriceReason.textContent = `${latest.volumePriceReason || ""} ${latest.liquidityReason || ""}`.trim();
   fields.kdValues.textContent = `K ${formatNumber(latest.kdK, 1)} / D ${formatNumber(latest.kdD, 1)}`;
   fields.kdSignal.textContent = `${latest.kdBiasText}: ${kdDetail(latest)} / ${latest.kdZoneText || "--"}`;

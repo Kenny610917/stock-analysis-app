@@ -359,6 +359,10 @@ def analyze(
 
     for index, row in enumerate(rows):
         if index + 1 < warmup:
+            row.reason = (
+                f"Only {index + 1} daily bar(s) available; need at least "
+                f"{warmup} bars to calculate Bollinger and volume indicators."
+            )
             continue
 
         close_window = closes[index - band_period + 1 : index + 1]

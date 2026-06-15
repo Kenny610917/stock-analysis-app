@@ -130,6 +130,123 @@ def translate_bollinger(row) -> dict[str, str]:
     }
 
 
+def pct_text(value: object) -> str:
+    if not isinstance(value, (int, float)):
+        return "無前日可比"
+    return f"{value:+.2f}%"
+
+
+def calculate_history_context(
+    bars: list[object],
+    index: int,
+    requirements: dict[str, int],
+) -> dict[str, object]:
+    bar = bars[index]
+    available_bars = index + 1
+    required_bars = max(requirements.values()) if requirements else 1
+    prev_close = bars[index - 1].close if index > 0 else None
+    price_change_pct = (
+        (bar.close - prev_close) / prev_close * 100.0
+        if isinstance(prev_close, (int, float)) and prev_close
+        else None
+    )
+    intraday_range_pct = (
+        (bar.high - bar.low) / bar.close * 100.0
+        if isinstance(bar.close, (int, float)) and bar.close
+        else None
+    )
+    open_to_close_pct = (
+        (bar.close - bar.open) / bar.open * 100.0
+        if isinstance(bar.open, (int, float)) and bar.open
+        else None
+    )
+    turnover = bar.close * bar.volume
+    short_history = available_bars < required_bars
+    requirement_text = (
+        f"BOLL/均量 {requirements['bollinger_volume']} 筆、"
+        f"KD {requirements['kd']} 筆、RSI {requirements['rsi']} 筆、"
+        f"MACD {requirements['macd']} 筆、箱型/道氏 {requirements['structure']} 筆"
+    )
+
+    return {
+        "availableBars": available_bars,
+        "requiredBars": required_bars,
+        "historyMode": "SHORT_HISTORY" if short_history else "STANDARD",
+        "historyModeText": "新上市/短歷史" if short_history else "標準分析",
+        "historyCompletenessPct": min(100.0, available_bars / required_bars * 100.0),
+        "historyFirstDate": bars[0].date if bars else None,
+        "historyLatestDate": bar.date,
+        "historyRequirementText": requirement_text,
+        "intradayRangePct": intraday_range_pct,
+        "openToClosePct": open_to_close_pct,
+        "shortPriceChangePct": price_change_pct,
+        "historyTurnover": turnover,
+    }
+
+
+def apply_short_history_overlay(payload: dict[str, object]) -> dict[str, object]:
+    if payload.get("historyMode") != "SHORT_HISTORY":
+        return payload
+
+    available = payload.get("availableBars")
+    required = payload.get("requiredBars")
+    requirement_text = payload.get("historyRequirementText")
+    change_pct = payload.get("shortPriceChangePct")
+    range_pct = payload.get("intradayRangePct")
+    open_close_pct = payload.get("openToClosePct")
+    price_summary = (
+        f"較前一交易日 {pct_text(change_pct)}"
+        if isinstance(change_pct, (int, float))
+        else "尚無足夠前一日可比較"
+    )
+    range_summary = (
+        f"當日振幅 {range_pct:.2f}%"
+        if isinstance(range_pct, (int, float))
+        else "當日振幅不足"
+    )
+    open_close_summary = (
+        f"開收變化 {open_close_pct:+.2f}%"
+        if isinstance(open_close_pct, (int, float))
+        else "開收變化不足"
+    )
+    reason = (
+        f"目前只抓到 {available} 筆日線，低於標準技術指標最低需求 {required} 筆。"
+        f"{requirement_text}。先顯示可用的價格與成交量摘要："
+        f"{price_summary}、{range_summary}、{open_close_summary}；"
+        "不產生買賣訊號。"
+    )
+    plan_reason = (
+        "新上市或剛恢復交易標的需要先累積資料。可先觀察每日高低點、成交量是否連續放大、"
+        "以及是否形成至少 8-20 日區間；等資料足夠後再使用 BOLL、KD、RSI、MACD、箱型與道氏確認。"
+    )
+
+    payload.update(
+        {
+            "action": "WATCH",
+            "actionText": "短歷史觀察",
+            "signal": "SHORT_HISTORY",
+            "signalText": "新上市資料不足",
+            "reasonText": reason,
+            "reliabilityScore": 10,
+            "reliabilityText": "低",
+            "consensusText": "短歷史",
+            "reliabilityReason": reason,
+            "planAction": "NO_TRADE",
+            "planActionText": "先觀察",
+            "setupText": "新上市資料不足",
+            "entryTrigger": None,
+            "stopLevel": payload.get("low"),
+            "targetLevel": payload.get("high"),
+            "riskPct": None,
+            "rewardPct": None,
+            "rewardRiskRatio": None,
+            "invalidationText": "資料未滿足標準指標需求前，不建立規則型入場計畫",
+            "planReason": plan_reason,
+        }
+    )
+    return payload
+
+
 def calculate_kd(
     bars: list[object],
     period: int,
@@ -947,7 +1064,21 @@ def calculate_volume_price(
         bias_text = "資料不足"
         reason = "需要前一日收盤價與均量，才能判斷量價關係。"
 
-        if signal == "UP_UP":
+        if volume_ratio is None and price_change_pct is not None:
+            signal = f"{price_direction}_SHORT_VOLUME"
+            bias = "WATCH"
+            bias_text = "短歷史觀察"
+            if price_direction == "UP":
+                signal_text = "價漲 / 均量不足"
+            elif price_direction == "DOWN":
+                signal_text = "價跌 / 均量不足"
+            else:
+                signal_text = "價平 / 均量不足"
+            reason = (
+                f"已有前一日價格可比較，但尚未滿 {volume_period} 日均量，"
+                "成交量只能看絕對值與後續是否連續放大，不能判定標準量價訊號。"
+            )
+        elif signal == "UP_UP":
             signal_text = "價漲量增"
             bias = "BULLISH"
             bias_text = "偏多"
@@ -1515,9 +1646,26 @@ def analyze_from_query(params: dict[str, list[str]]) -> dict[str, object]:
         volume_price_rows=volume_price_rows,
     )
 
-    selected = [
-        row_to_dict(row, kd_row, rsi_row, macd_row, structure_row, volume_price_row, box_row, dow_row)
-        for row, kd_row, rsi_row, macd_row, structure_row, volume_price_row, box_row, dow_row in zip(
+    history_requirements = {
+        "bollinger_volume": max(band_period, volume_period),
+        "kd": kd_period,
+        "rsi": rsi_period + 1,
+        "macd": macd_slow,
+        "structure": 20,
+    }
+    selected = []
+    start_index = max(0, len(rows) - last_count)
+    for offset, (
+        row,
+        kd_row,
+        rsi_row,
+        macd_row,
+        structure_row,
+        volume_price_row,
+        box_row,
+        dow_row,
+    ) in enumerate(
+        zip(
             rows[-last_count:],
             kd_rows[-last_count:],
             rsi_rows[-last_count:],
@@ -1527,13 +1675,19 @@ def analyze_from_query(params: dict[str, list[str]]) -> dict[str, object]:
             box_rows[-last_count:],
             dow_rows[-last_count:],
         )
-    ]
+    ):
+        payload = row_to_dict(row, kd_row, rsi_row, macd_row, structure_row, volume_price_row, box_row, dow_row)
+        payload.update(calculate_history_context(bars, start_index + offset, history_requirements))
+        selected.append(apply_short_history_overlay(payload))
+
     return {
         "symbol": symbol,
         "source": "Yahoo Finance",
         "range": data_range,
         "interval": "1d",
         "barsFetched": len(bars),
+        "historyMode": selected[-1].get("historyMode") if selected else "NO_DATA",
+        "historyRequirementText": selected[-1].get("historyRequirementText") if selected else "",
         "generatedAt": datetime.now(timezone.utc).isoformat(),
         "settings": {
             "bandPeriod": band_period,
