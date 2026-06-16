@@ -41,6 +41,9 @@ const fields = {
   volumePriceSignal: document.querySelector("#volumePriceSignal"),
   turnoverValues: document.querySelector("#turnoverValues"),
   volumePriceReason: document.querySelector("#volumePriceReason"),
+  candlestickSignal: document.querySelector("#candlestickSignal"),
+  candlestickValues: document.querySelector("#candlestickValues"),
+  candlestickReason: document.querySelector("#candlestickReason"),
   kdValues: document.querySelector("#kdValues"),
   kdSignal: document.querySelector("#kdSignal"),
   kdReason: document.querySelector("#kdReason"),
@@ -305,6 +308,11 @@ function renderLatest(data) {
     ? `成交金額 ${formatCompact(latest.turnover)} / 尚無60日均值 / ${latest.historyRequirementText || "--"}`
     : `成交金額 ${formatCompact(latest.turnover)} / 60日均 ${formatCompact(latest.turnoverMa)} / ${latest.liquidityText || "--"}`;
   fields.volumePriceReason.textContent = `${latest.volumePriceReason || ""} ${latest.liquidityReason || ""}`.trim();
+  fields.candlestickSignal.textContent = latest.candlestickSignalText || "--";
+  fields.candlestickValues.textContent =
+    `實體 ${formatNumber(latest.candlestickBodyPct, 1)}% / 上影 ${formatNumber(latest.candlestickUpperShadowPct, 1)}% / 下影 ${formatNumber(latest.candlestickLowerShadowPct, 1)}% / ${latest.candlestickPositionText || "--"}`;
+  fields.candlestickReason.textContent =
+    `${latest.candlestickBiasText || "--"}: ${latest.candlestickReason || "--"} ${latest.candlestickRiskText || ""}`.trim();
   fields.kdValues.textContent = `K ${formatNumber(latest.kdK, 1)} / D ${formatNumber(latest.kdD, 1)}`;
   fields.kdSignal.textContent = `${latest.kdBiasText}: ${kdDetail(latest)} / ${latest.kdZoneText || "--"}`;
   fields.kdReason.textContent = kdReason(latest);
@@ -379,6 +387,7 @@ function renderRows(rows) {
     tr.innerHTML = `
       <td>${row.date}</td>
       <td>${formatNumber(row.close, 2)}</td>
+      <td>${row.candlestickSignalText}</td>
       <td>${formatNumber(row.lower, 2)}</td>
       <td>${formatNumber(row.middle, 2)}</td>
       <td>${formatNumber(row.upper, 2)}</td>
@@ -423,7 +432,7 @@ function renderScreenRows(data) {
   const skipped = data.errors?.length ? ` / 略過 ${formatInt(data.errors.length)}` : "";
   fields.screenUpdated.textContent = `${new Date(data.generatedAt).toLocaleString()} / 掃描 ${formatInt(scanned)} / 股票池 ${formatInt(total)} 檔${skipped}`;
   if (!data.rows.length) {
-    screenRowsBody.innerHTML = `<tr><td colspan="17" class="empty-cell">沒有符合條件的結果</td></tr>`;
+    screenRowsBody.innerHTML = `<tr><td colspan="18" class="empty-cell">沒有符合條件的結果</td></tr>`;
     return;
   }
   data.rows.forEach((row, index) => {
@@ -439,6 +448,7 @@ function renderScreenRows(data) {
       <td>${row.consensusText}</td>
       <td>${row.planActionText}</td>
       <td>${row.volumePriceSignalText}</td>
+      <td>${row.candlestickSignalText}</td>
       <td>${row.liquidityText}</td>
       <td>${row.boxSignalText} / ${formatInt(row.boxQualityScore)}</td>
       <td>${row.dowSignalText} / ${formatInt(row.dowScore)}</td>
@@ -452,7 +462,7 @@ function renderScreenRows(data) {
 }
 
 function renderError(message) {
-  rowsBody.innerHTML = `<tr><td colspan="34" class="empty-cell">${message}</td></tr>`;
+  rowsBody.innerHTML = `<tr><td colspan="35" class="empty-cell">${message}</td></tr>`;
   fields.latestDate.textContent = "--";
   fields.latestSignal.textContent = "錯誤";
   fields.latestAction.textContent = "--";
@@ -470,6 +480,9 @@ function renderError(message) {
   fields.volumePriceSignal.textContent = "--";
   fields.turnoverValues.textContent = "--";
   fields.volumePriceReason.textContent = "--";
+  fields.candlestickSignal.textContent = "--";
+  fields.candlestickValues.textContent = "--";
+  fields.candlestickReason.textContent = "--";
   fields.trendValues.textContent = "--";
   fields.structureValues.textContent = "--";
   fields.trendReason.textContent = "--";
@@ -519,7 +532,7 @@ async function refresh() {
 
 async function runScreen() {
   screenButton.disabled = true;
-  screenRowsBody.innerHTML = `<tr><td colspan="17" class="empty-cell">掃描中...</td></tr>`;
+  screenRowsBody.innerHTML = `<tr><td colspan="18" class="empty-cell">掃描中...</td></tr>`;
   try {
     const response = await fetch(`/api/screen?${screenParamsFromForm().toString()}`, {
       headers: { Accept: "application/json" },
@@ -528,7 +541,7 @@ async function runScreen() {
     if (!response.ok) throw new Error(data.error || "Request failed");
     renderScreenRows(data);
   } catch (error) {
-    screenRowsBody.innerHTML = `<tr><td colspan="17" class="empty-cell">${error.message}</td></tr>`;
+    screenRowsBody.innerHTML = `<tr><td colspan="18" class="empty-cell">${error.message}</td></tr>`;
   } finally {
     screenButton.disabled = false;
   }

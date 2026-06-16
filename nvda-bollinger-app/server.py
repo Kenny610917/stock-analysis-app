@@ -745,6 +745,7 @@ def calculate_reliability(payload: dict[str, object]) -> dict[str, object]:
         ("量價", "volumePriceBias"),
         ("箱型", "boxBias"),
         ("道氏", "dowBias"),
+        ("K線", "candlestickBias"),
     ):
         direction = bias_to_direction(payload.get(key))
         if direction:
@@ -843,6 +844,195 @@ def pct_distance(from_price: object, to_price: object) -> float | None:
     if from_price == 0:
         return None
     return (float(to_price) - float(from_price)) / float(from_price) * 100.0
+
+
+def candlestick_bias_text(bias: str) -> str:
+    return {
+        "BULLISH": "偏多",
+        "BEARISH": "偏空",
+        "WATCH_REBOUND": "反彈觀察",
+        "CAUTION": "轉弱警示",
+        "NEUTRAL": "中性",
+        "NO_DATA": "資料不足",
+    }.get(bias, bias)
+
+
+def calculate_candlestick_patterns(bars: list[object], context_lookback: int = 20) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for index, bar in enumerate(bars):
+        open_price = float(bar.open)
+        high = float(bar.high)
+        low = float(bar.low)
+        close = float(bar.close)
+        candle_range = max(0.0, high - low)
+        body = abs(close - open_price)
+        upper_shadow = max(0.0, high - max(open_price, close))
+        lower_shadow = max(0.0, min(open_price, close) - low)
+        if candle_range <= 0:
+            body_pct = 0.0
+            upper_pct = 0.0
+            lower_pct = 0.0
+        else:
+            body_pct = body / candle_range * 100.0
+            upper_pct = upper_shadow / candle_range * 100.0
+            lower_pct = lower_shadow / candle_range * 100.0
+
+        total_shadow_pct = upper_pct + lower_pct
+        upper_to_body = upper_shadow / body if body > 0 else float("inf")
+        lower_to_body = lower_shadow / body if body > 0 else float("inf")
+        is_red = close > open_price
+        is_black = close < open_price
+        direction_text = "紅K" if is_red else "黑K" if is_black else "平盤K"
+        start = max(0, index - context_lookback + 1)
+        window = bars[start : index + 1]
+        window_high = max(item.high for item in window) if window else high
+        window_low = min(item.low for item in window) if window else low
+        if window_high > window_low:
+            position = (close - window_low) / (window_high - window_low)
+        else:
+            position = 0.5
+        if position >= 0.75:
+            position_text = "高位區"
+        elif position <= 0.25:
+            position_text = "低位區"
+        else:
+            position_text = "區間中段"
+
+        shadow_text = "短影線"
+        continuation_text = "阻力較小"
+        if total_shadow_pct >= 50.0:
+            shadow_text = "長影線"
+            continuation_text = "多空拉扯大"
+        elif total_shadow_pct >= 20.0:
+            shadow_text = "中影線"
+            continuation_text = "方向較不明朗"
+
+        signal = "MIXED_CANDLE"
+        signal_text = f"{direction_text}帶影線"
+        bias = "NEUTRAL"
+        reason = (
+            f"{direction_text}，實體佔 {body_pct:.1f}%、上影 {upper_pct:.1f}%、下影 {lower_pct:.1f}%；"
+            f"{shadow_text}代表{continuation_text}。"
+        )
+
+        no_upper = upper_pct <= 5.0
+        no_lower = lower_pct <= 5.0
+        short_body = body_pct <= 30.0
+        doji_body = body_pct <= 8.0
+        short_shadow = total_shadow_pct <= 20.0
+
+        if candle_range <= 0 or (doji_body and upper_pct <= 2.0 and lower_pct <= 2.0):
+            signal = "ONE_PRICE_LINE"
+            signal_text = "一字線"
+            bias = "NO_DATA"
+            reason = "開高低收幾乎相同，可能是極端行情、漲跌停或成交不足；不適合單獨判讀方向。"
+        elif doji_body and no_upper and lower_pct >= 55.0:
+            signal = "T_LINE"
+            signal_text = "T字線"
+            bias = "WATCH_REBOUND" if position <= 0.35 else "CAUTION" if position >= 0.65 else "NEUTRAL"
+            reason = (
+                f"T字線出現在{position_text}，長下影線代表盤中賣壓被買盤拉回；"
+                "低位較偏反彈觀察，高位則需留意買方力道疲乏。"
+            )
+        elif doji_body and no_lower and upper_pct >= 55.0:
+            signal = "INVERTED_T_LINE"
+            signal_text = "倒T線"
+            bias = "BEARISH" if position >= 0.65 else "CAUTION"
+            reason = (
+                f"倒T線出現在{position_text}，長上影線代表盤中上攻後被賣壓壓回；"
+                "若位於高位區，轉弱風險較高。"
+            )
+        elif doji_body and upper_pct >= 20.0 and lower_pct >= 20.0:
+            signal = "DOJI"
+            signal_text = "十字線"
+            bias = "CAUTION" if position >= 0.75 else "WATCH_REBOUND" if position <= 0.25 else "NEUTRAL"
+            reason = (
+                f"十字線出現在{position_text}，開收接近但上下影線較長，代表多空勢均力敵；"
+                "高位留意走空，低位觀察止跌。"
+            )
+        elif short_body and no_lower and upper_to_body >= 2.0:
+            signal = "UPPER_SHADOW_RED" if is_red else "UPPER_SHADOW_BLACK"
+            signal_text = "倒鎚紅K" if is_red else "倒鎚黑K"
+            bias = "CAUTION" if is_red else "BEARISH"
+            reason = (
+                f"{signal_text}，上影線至少為實體兩倍且下影線很短，表示盤中上攻後被賣壓壓制；"
+                "需搭配量能與壓力位確認。"
+            )
+        elif short_body and no_upper and lower_to_body >= 2.0:
+            signal = "LOWER_SHADOW_RED" if is_red else "LOWER_SHADOW_BLACK"
+            signal_text = "紅K鎚子" if is_red else "黑K鎚子"
+            bias = "BULLISH" if is_red else "WATCH_REBOUND"
+            reason = (
+                f"{signal_text}，下影線至少為實體兩倍且上影線很短，表示盤中下殺後有買盤承接；"
+                "仍需等後續收盤與量能確認。"
+            )
+        elif short_body and upper_pct >= 15.0 and lower_pct >= 15.0:
+            signal = "SPINNING_TOP_RED" if is_red else "SPINNING_TOP_BLACK"
+            signal_text = "紡錘紅K" if is_red else "紡錘黑K"
+            bias = "NEUTRAL"
+            reason = (
+                f"{signal_text}，上下影線都明顯且實體偏短，代表多空拉扯；"
+                "實體越短越偏勢均力敵。"
+            )
+        elif short_shadow and is_red:
+            if body_pct >= 65.0:
+                signal = "BIG_RED_CANDLE"
+                signal_text = "大紅K"
+            elif body_pct >= 35.0:
+                signal = "MEDIUM_RED_CANDLE"
+                signal_text = "中紅K"
+            else:
+                signal = "SMALL_RED_CANDLE"
+                signal_text = "小紅K"
+            bias = "BULLISH" if body_pct >= 35.0 else "NEUTRAL"
+            reason = (
+                f"{signal_text}，收盤高於開盤且影線佔比低於20%，"
+                "代表買方勝出；實體越長，趨勢延續性越高。"
+            )
+        elif short_shadow and is_black:
+            if body_pct >= 65.0:
+                signal = "BIG_BLACK_CANDLE"
+                signal_text = "大黑K"
+            elif body_pct >= 35.0:
+                signal = "MEDIUM_BLACK_CANDLE"
+                signal_text = "中黑K"
+            else:
+                signal = "SMALL_BLACK_CANDLE"
+                signal_text = "小黑K"
+            bias = "BEARISH" if body_pct >= 35.0 else "NEUTRAL"
+            reason = (
+                f"{signal_text}，收盤低於開盤且影線佔比低於20%，"
+                "代表賣方勝出；實體越長，趨勢延續性越高。"
+            )
+        elif is_red:
+            signal = "RED_MIXED_SHADOW"
+            signal_text = "紅K帶影線"
+            bias = "BULLISH" if body_pct >= 50.0 and total_shadow_pct < 50.0 else "NEUTRAL"
+        elif is_black:
+            signal = "BLACK_MIXED_SHADOW"
+            signal_text = "黑K帶影線"
+            bias = "BEARISH" if body_pct >= 50.0 and total_shadow_pct < 50.0 else "NEUTRAL"
+
+        risk_text = "K線只反映單一週期的多空結果，不能單獨作為買賣依據，需搭配趨勢、量能與其他指標。"
+        rows.append(
+            {
+                "candlestickSignal": signal,
+                "candlestickSignalText": signal_text,
+                "candlestickBias": bias,
+                "candlestickBiasText": candlestick_bias_text(bias),
+                "candlestickDirectionText": direction_text,
+                "candlestickBodyPct": body_pct,
+                "candlestickUpperShadowPct": upper_pct,
+                "candlestickLowerShadowPct": lower_pct,
+                "candlestickTotalShadowPct": total_shadow_pct,
+                "candlestickShadowText": shadow_text,
+                "candlestickPositionText": position_text,
+                "candlestickReason": reason,
+                "candlestickRiskText": risk_text,
+            }
+        )
+
+    return rows
 
 
 def calculate_trade_plan(payload: dict[str, object]) -> dict[str, object]:
@@ -2038,6 +2228,7 @@ def row_to_dict(
     kd_row: dict[str, object],
     rsi_row: dict[str, object],
     macd_row: dict[str, object],
+    candlestick_row: dict[str, object],
     structure_row: dict[str, object],
     volume_price_row: dict[str, object],
     box_row: dict[str, object],
@@ -2064,6 +2255,7 @@ def row_to_dict(
         **kd_row,
         **rsi_row,
         **macd_row,
+        **candlestick_row,
         **structure_row,
         **volume_price_row,
         **box_row,
@@ -2120,6 +2312,7 @@ def analyze_from_query(params: dict[str, list[str]]) -> dict[str, object]:
         slow_period=macd_slow,
         signal_period=macd_signal,
     )
+    candlestick_rows = calculate_candlestick_patterns(bars=bars)
     structure_rows = calculate_market_structure(bars=bars)
     volume_price_rows = calculate_volume_price(
         bars=bars,
@@ -2151,6 +2344,7 @@ def analyze_from_query(params: dict[str, list[str]]) -> dict[str, object]:
         kd_row,
         rsi_row,
         macd_row,
+        candlestick_row,
         structure_row,
         volume_price_row,
         box_row,
@@ -2161,13 +2355,24 @@ def analyze_from_query(params: dict[str, list[str]]) -> dict[str, object]:
             kd_rows[-last_count:],
             rsi_rows[-last_count:],
             macd_rows[-last_count:],
+            candlestick_rows[-last_count:],
             structure_rows[-last_count:],
             volume_price_rows[-last_count:],
             box_rows[-last_count:],
             dow_rows[-last_count:],
         )
     ):
-        payload = row_to_dict(row, kd_row, rsi_row, macd_row, structure_row, volume_price_row, box_row, dow_row)
+        payload = row_to_dict(
+            row,
+            kd_row,
+            rsi_row,
+            macd_row,
+            candlestick_row,
+            structure_row,
+            volume_price_row,
+            box_row,
+            dow_row,
+        )
         payload.update(calculate_history_context(bars, start_index + offset, history_requirements))
         payload.update(
             {
@@ -2409,6 +2614,8 @@ def strategy_score(row: dict[str, object], strategy: str) -> tuple[int, str, str
     dow_volume_confirm = row.get("dowVolumeConfirm")
     dow_reversal = row.get("dowReversalSignal")
     dow_phase = row.get("dowPhase")
+    candlestick_bias = row.get("candlestickBias")
+    candlestick_signal = row.get("candlestickSignal")
 
     score = reliability
     match = "觀察"
@@ -2430,6 +2637,12 @@ def strategy_score(row: dict[str, object], strategy: str) -> tuple[int, str, str
             score += 10
         if box_signal in {"UPPER_FALSE_BREAKOUT", "BOX_TOO_WIDE"}:
             score -= 8
+        if candlestick_bias == "BULLISH":
+            score += 4
+        elif candlestick_bias == "BEARISH":
+            score -= 5
+        elif candlestick_bias == "CAUTION":
+            score -= 3
         match = "偏多共振" if bullish > bearish else "未形成偏多共振"
         reason = f"{bullish} 個偏多、{bearish} 個偏空；優先找多指標同向且可靠度高的標的。"
     elif strategy == "oversold_rebound":
@@ -2445,6 +2658,8 @@ def strategy_score(row: dict[str, object], strategy: str) -> tuple[int, str, str
         if volume_price_signal == "DOWN_UP":
             oversold += 1
         if kd_divergence == "BULLISH_DIVERGENCE":
+            oversold += 1
+        if candlestick_bias == "WATCH_REBOUND":
             oversold += 1
         score = reliability + oversold * 15 - bearish * 4
         match = "低檔反彈觀察" if oversold >= 2 else "反彈條件不足"
@@ -2466,6 +2681,8 @@ def strategy_score(row: dict[str, object], strategy: str) -> tuple[int, str, str
                 score += 10
         if box_signal == "BOX_NEAR_BOTTOM":
             score += 6
+        if candlestick_signal in {"LOWER_SHADOW_RED", "LOWER_SHADOW_BLACK", "T_LINE"}:
+            score += 4
         match = "多頭回檔觀察" if score >= 70 else "回檔條件不足"
         reason = "優先找長線趨勢未破、價格靠近支撐或短均線的回檔標的。"
     elif strategy == "box_breakout":
@@ -2493,6 +2710,10 @@ def strategy_score(row: dict[str, object], strategy: str) -> tuple[int, str, str
             score += 8
         if volume_price_bias == "BULLISH":
             score += 8
+        if candlestick_bias == "BULLISH":
+            score += 4
+        elif candlestick_bias in {"BEARISH", "CAUTION"}:
+            score -= 5
         if isinstance(box_width, (int, float)) and box_width > 25:
             score -= 12
         reason = (
@@ -2525,6 +2746,10 @@ def strategy_score(row: dict[str, object], strategy: str) -> tuple[int, str, str
             score -= 8
         if volume_price_bias == "BULLISH":
             score += 5
+        if candlestick_bias == "BULLISH":
+            score += 3
+        elif candlestick_bias in {"BEARISH", "CAUTION"}:
+            score -= 4
         reason = (
             f"道氏分數 {dow_score}/100；優先找主要趨勢偏多、次級趨勢未破、"
             "且成交量順著主要趨勢確認的標的。"
@@ -2549,6 +2774,10 @@ def strategy_score(row: dict[str, object], strategy: str) -> tuple[int, str, str
             score += 12
         if action in {"SELL", "WAIT_CONFIRMATION"}:
             score += 10
+        if candlestick_bias in {"BEARISH", "CAUTION"}:
+            score += 6
+        elif candlestick_bias == "BULLISH":
+            score -= 4
         match = "風險偏高" if bearish >= 2 else "風險普通"
         reason = f"{bearish} 個偏空、{bullish} 個偏多；此策略用來找應避開或降風險的標的。"
     else:

@@ -12,7 +12,7 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/icons/icon-192.png" sizes="192x192" />
     <link rel="apple-touch-icon" href="/icons/icon-192.png" />
-    <link rel="stylesheet" href="/styles.css?v=elliott1" />
+    <link rel="stylesheet" href="/styles.css?v=kbar1" />
   </head>
   <body>
     <main class="app-shell">
@@ -134,6 +134,13 @@
             <strong id="volumePriceSignal">--</strong>
             <small id="turnoverValues">--</small>
             <small id="volumePriceReason">--</small>
+          </article>
+
+          <article class="metric-panel">
+            <span>K線型態</span>
+            <strong id="candlestickSignal">--</strong>
+            <small id="candlestickValues">--</small>
+            <small id="candlestickReason">--</small>
           </article>
 
           <article class="metric-panel kd-panel">
@@ -293,6 +300,7 @@
                   <th>共振</th>
                   <th>交易計畫</th>
                   <th>量價</th>
+                  <th>K線</th>
                   <th>流動性</th>
                   <th>箱型</th>
                   <th>道氏</th>
@@ -304,7 +312,7 @@
               </thead>
               <tbody id="screenRowsBody">
                 <tr>
-                  <td colspan="17" class="empty-cell">尚未掃描</td>
+                  <td colspan="18" class="empty-cell">尚未掃描</td>
                 </tr>
               </tbody>
             </table>
@@ -322,6 +330,7 @@
                 <tr>
                   <th>日期</th>
                   <th>收盤</th>
+                  <th>K線</th>
                   <th>下軌</th>
                   <th>中線</th>
                   <th>上軌</th>
@@ -358,7 +367,7 @@
               </thead>
               <tbody id="rowsBody">
                 <tr>
-                  <td colspan="34" class="empty-cell">載入中...</td>
+                  <td colspan="35" class="empty-cell">載入中...</td>
                 </tr>
               </tbody>
             </table>
@@ -370,6 +379,6 @@
         </footer>
       </section>
     </main>
-    <script src="/app.js?v=elliott1"></script>
+    <script src="/app.js?v=kbar1"></script>
   </body>
 </html>

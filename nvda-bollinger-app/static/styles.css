@@ -486,11 +486,11 @@ textarea:disabled {
 table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 2400px;
+  min-width: 2500px;
 }
 
 .screener-table {
-  min-width: 1580px;
+  min-width: 1660px;
 }
 
 th,
