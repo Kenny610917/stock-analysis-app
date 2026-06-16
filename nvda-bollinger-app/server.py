@@ -1167,8 +1167,261 @@ def calculate_wave_legs(bars: list[object], pivots: list[dict[str, object]]) -> 
     return legs
 
 
+def elliott_default_observation(reason: str = "轉折點不足，暫時無法辨識 1-5 推動浪或 A-B-C 修正浪。") -> dict[str, object]:
+    return {
+        "elliottSignal": "ELLIOTT_INSUFFICIENT",
+        "elliottSignalText": "波浪不足",
+        "elliottBias": "NO_DATA",
+        "elliottBiasText": "資料不足",
+        "elliottStageText": "--",
+        "elliottScore": 0,
+        "elliottRuleText": "尚無足夠轉折點可檢查艾略特規則。",
+        "elliottRiskText": "艾略特波浪只適合做結構觀察，不適合單獨作為買賣依據。",
+        "elliottReason": reason,
+        "elliottWaveLabels": [],
+    }
+
+
+def elliott_wave_label(label: str, pivot: dict[str, object]) -> dict[str, object]:
+    return {
+        "label": label,
+        "date": pivot.get("date"),
+        "kind": pivot.get("kind"),
+        "price": pivot.get("price"),
+        "pivotLabel": pivot.get("label"),
+    }
+
+
+def elliott_leg_stats(bars: list[object], start: dict[str, object], end: dict[str, object]) -> dict[str, object]:
+    start_index = int(start["index"])
+    end_index = int(end["index"])
+    start_price = float(start["price"])
+    end_price = float(end["price"])
+    low = min(start_index, end_index)
+    high = max(start_index, end_index)
+    amplitude = abs(end_price - start_price)
+    change_pct = pct_distance(start_price, end_price)
+    volume_sum = sum(bar.volume for bar in bars[low : high + 1])
+    bars_count = high - low + 1
+    return {
+        "amplitude": amplitude,
+        "changePct": abs(change_pct) if isinstance(change_pct, (int, float)) else None,
+        "volumeSum": volume_sum,
+        "bars": bars_count,
+    }
+
+
+def calculate_elliott_impulse(
+    bars: list[object],
+    segment: list[dict[str, object]],
+    direction: str,
+    symbol: str,
+) -> dict[str, object]:
+    p0, p1, p2, p3, p4, p5 = segment
+    wave1 = elliott_leg_stats(bars, p0, p1)
+    wave3 = elliott_leg_stats(bars, p2, p3)
+    wave5 = elliott_leg_stats(bars, p4, p5)
+    amp1 = float(wave1["amplitude"])
+    amp3 = float(wave3["amplitude"])
+    amp5 = float(wave5["amplitude"])
+
+    if direction == "BULLISH":
+        checks = [
+            ("2浪未跌破1浪起點", float(p2["price"]) > float(p0["price"])),
+            ("3浪突破1浪高點", float(p3["price"]) > float(p1["price"])),
+            ("3浪不是最短推動浪", amp3 >= min(amp1, amp5)),
+            ("4浪未跌回1浪高點", float(p4["price"]) > float(p1["price"])),
+        ]
+        bias_text = "偏多結構"
+        stage_text = "1-5 上升推動浪候選"
+        extension_risk = amp5 > max(amp3 * 1.15, amp1 * 1.618)
+        signal_text = "第5波延伸風險" if extension_risk else "五浪推動觀察"
+        risk_text = (
+            "若第5波延伸，後續 A-B-C 修正或快速反轉風險會升高；請搭配 RSI、MACD、KD、布林與停損條件確認。"
+            if extension_risk
+            else "五浪結構仍是候選判讀，任何一條規則失效都需要重新計算波浪。"
+        )
+    else:
+        checks = [
+            ("2浪反彈未越過1浪起點", float(p2["price"]) < float(p0["price"])),
+            ("3浪跌破1浪低點", float(p3["price"]) < float(p1["price"])),
+            ("3浪不是最短推動浪", amp3 >= min(amp1, amp5)),
+            ("4浪反彈未越過1浪低點", float(p4["price"]) < float(p1["price"])),
+        ]
+        bias_text = "偏空結構"
+        stage_text = "1-5 下降推動浪候選"
+        extension_risk = amp5 > max(amp3 * 1.15, amp1 * 1.618)
+        signal_text = "下跌第5波延伸" if extension_risk else "五浪下跌觀察"
+        risk_text = (
+            "若下跌第5波延伸，短線恐慌後也可能出現急彈；請搭配支撐、量能與風險控管確認。"
+            if extension_risk
+            else "下降五浪仍是候選判讀，任何一條規則失效都需要重新計算波浪。"
+        )
+
+    passed = sum(1 for _label, ok in checks if ok)
+    score = min(100, 40 + passed * 15)
+    if wave3["volumeSum"] >= max(wave1["volumeSum"], wave5["volumeSum"]) * 0.85:
+        score = min(100, score + 8)
+        volume_text = "3浪量能相對突出"
+    else:
+        volume_text = "3浪量能未明顯優於1/5浪"
+
+    rule_text = "；".join(f"{label}{'✓' if ok else '×'}" for label, ok in checks)
+    if score < 65:
+        signal_text = "五浪規則不足"
+    elif score < 85:
+        signal_text = "第5波延伸候選" if extension_risk else "五浪候選"
+    signal = "ELLIOTT_IMPULSE_UP" if direction == "BULLISH" else "ELLIOTT_IMPULSE_DOWN"
+    if extension_risk:
+        signal = "ELLIOTT_FIFTH_EXTENSION_RISK" if direction == "BULLISH" else "ELLIOTT_FIFTH_DOWN_EXTENSION"
+
+    suitability = (
+        "市場型標的較適合波浪觀察。"
+        if symbol.startswith("^") or symbol in {"SPY", "QQQ", "DIA", "IWM"}
+        else "個股受財報、消息與籌碼影響較大，艾略特只能作輔助。"
+    )
+    reason = (
+        f"{stage_text}，規則通過 {passed}/4，{volume_text}。"
+        f"1浪 {wave1['changePct']:.2f}%、3浪 {wave3['changePct']:.2f}%、5浪 {wave5['changePct']:.2f}%。"
+        f"{suitability}"
+    )
+
+    return {
+        "elliottSignal": signal,
+        "elliottSignalText": signal_text,
+        "elliottBias": direction,
+        "elliottBiasText": bias_text,
+        "elliottStageText": stage_text,
+        "elliottScore": score,
+        "elliottRuleText": rule_text,
+        "elliottRiskText": risk_text,
+        "elliottReason": reason,
+        "elliottWaveLabels": [
+            elliott_wave_label("起點", p0),
+            elliott_wave_label("1", p1),
+            elliott_wave_label("2", p2),
+            elliott_wave_label("3", p3),
+            elliott_wave_label("4", p4),
+            elliott_wave_label("5", p5),
+        ],
+    }
+
+
+def calculate_elliott_correction(
+    bars: list[object],
+    segment: list[dict[str, object]],
+    direction: str,
+    symbol: str,
+) -> dict[str, object]:
+    p0, p_a, p_b, p_c = segment
+    wave_a = elliott_leg_stats(bars, p0, p_a)
+    wave_c = elliott_leg_stats(bars, p_b, p_c)
+
+    if direction == "DOWN":
+        checks = [
+            ("B浪反彈未越過A浪起點", float(p_b["price"]) < float(p0["price"])),
+            ("C浪跌破或接近A浪低點", float(p_c["price"]) <= float(p_a["price"]) * 1.01),
+        ]
+        bias = "CAUTION"
+        bias_text = "修正偏空"
+        stage_text = "A-B-C 下跌修正候選"
+        signal_text = "A-B-C修正"
+        risk_text = "A-B-C 可能只是回檔，也可能演變成趨勢反轉；需搭配支撐、量能、RSI/MACD 與原本交易計畫確認。"
+    else:
+        checks = [
+            ("B浪回檔未跌破A浪起點", float(p_b["price"]) > float(p0["price"])),
+            ("C浪突破或接近A浪高點", float(p_c["price"]) >= float(p_a["price"]) * 0.99),
+        ]
+        bias = "WATCH_REBOUND"
+        bias_text = "修正反彈"
+        stage_text = "A-B-C 上升修正候選"
+        signal_text = "A-B-C反彈"
+        risk_text = "反彈修正可能失敗，若無量能與趨勢確認，不應把 C 浪直接視為新趨勢。"
+
+    passed = sum(1 for _label, ok in checks if ok)
+    score = min(100, 42 + passed * 24)
+    rule_text = "；".join(f"{label}{'✓' if ok else '×'}" for label, ok in checks)
+    if score < 70:
+        signal_text = "修正浪待確認"
+
+    suitability = (
+        "市場型標的較適合波浪觀察。"
+        if symbol.startswith("^") or symbol in {"SPY", "QQQ", "DIA", "IWM"}
+        else "個股波浪容易受事件干擾，此判讀只作輔助。"
+    )
+    reason = (
+        f"{stage_text}，規則通過 {passed}/2。"
+        f"A浪 {wave_a['changePct']:.2f}%、C浪 {wave_c['changePct']:.2f}%。{suitability}"
+    )
+
+    return {
+        "elliottSignal": "ELLIOTT_ABC_DOWN" if direction == "DOWN" else "ELLIOTT_ABC_UP",
+        "elliottSignalText": signal_text,
+        "elliottBias": bias,
+        "elliottBiasText": bias_text,
+        "elliottStageText": stage_text,
+        "elliottScore": score,
+        "elliottRuleText": rule_text,
+        "elliottRiskText": risk_text,
+        "elliottReason": reason,
+        "elliottWaveLabels": [
+            elliott_wave_label("起點", p0),
+            elliott_wave_label("A", p_a),
+            elliott_wave_label("B", p_b),
+            elliott_wave_label("C", p_c),
+        ],
+    }
+
+
+def calculate_elliott_observation(
+    bars: list[object],
+    pivots: list[dict[str, object]],
+    symbol: str,
+) -> dict[str, object]:
+    if len(bars) < 20:
+        return elliott_default_observation(
+            f"目前只有 {len(bars)} 筆日線；艾略特波浪偏中長期結構觀察，短歷史不適合硬判讀。"
+        )
+
+    usable = [pivot for pivot in pivots if pivot.get("kind") in {"HIGH", "LOW"}]
+    if len(usable) < 4:
+        return elliott_default_observation(
+            f"目前只有 {len(usable)} 個有效轉折點，尚不足以檢查 A-B-C 或 1-5 結構。"
+        )
+
+    recent = usable[-12:]
+    if len(recent) >= 6:
+        latest_six = recent[-6:]
+        kinds = [pivot["kind"] for pivot in latest_six]
+        if kinds == ["LOW", "HIGH", "LOW", "HIGH", "LOW", "HIGH"]:
+            return calculate_elliott_impulse(bars, latest_six, "BULLISH", symbol)
+        if kinds == ["HIGH", "LOW", "HIGH", "LOW", "HIGH", "LOW"]:
+            return calculate_elliott_impulse(bars, latest_six, "BEARISH", symbol)
+
+    latest_four = recent[-4:]
+    kinds = [pivot["kind"] for pivot in latest_four]
+    if kinds == ["HIGH", "LOW", "HIGH", "LOW"]:
+        return calculate_elliott_correction(bars, latest_four, "DOWN", symbol)
+    if kinds == ["LOW", "HIGH", "LOW", "HIGH"]:
+        return calculate_elliott_correction(bars, latest_four, "UP", symbol)
+
+    return {
+        "elliottSignal": "ELLIOTT_MIXED",
+        "elliottSignalText": "波浪未確認",
+        "elliottBias": "NEUTRAL",
+        "elliottBiasText": "中性",
+        "elliottStageText": "未形成清楚 1-5 或 A-B-C",
+        "elliottScore": 30,
+        "elliottRuleText": "最近轉折未符合標準 1-5 推動浪或 A-B-C 修正浪序列。",
+        "elliottRiskText": "波浪理論事前判讀容易重算，應只當成趨勢階段提示，需搭配其他指標。",
+        "elliottReason": f"最近 {len(recent)} 個轉折點未形成清楚艾略特序列；先沿用 HH/HL/LH/LL 波段結構觀察。",
+        "elliottWaveLabels": [],
+    }
+
+
 def calculate_wave_structure(
     bars: list[object],
+    symbol: str,
     reversal_pct: float = 3.0,
     max_chart_points: int = 120,
 ) -> dict[str, object]:
@@ -1187,6 +1440,7 @@ def calculate_wave_structure(
     ]
     pivots = label_wave_pivots(bars, build_zigzag_pivots(bars, reversal_pct))
     legs = calculate_wave_legs(bars, pivots)
+    elliott = calculate_elliott_observation(bars=bars, pivots=pivots, symbol=symbol)
 
     highs = [pivot for pivot in pivots if pivot["kind"] == "HIGH"]
     lows = [pivot for pivot in pivots if pivot["kind"] == "LOW"]
@@ -1245,6 +1499,7 @@ def calculate_wave_structure(
         "wavePivots": pivots[-12:],
         "waveLegs": legs[-8:],
         "waveChartPoints": chart_points,
+        "elliott": elliott,
     }
 
 
@@ -1879,7 +2134,8 @@ def analyze_from_query(params: dict[str, list[str]]) -> dict[str, object]:
         bars=bars,
         volume_price_rows=volume_price_rows,
     )
-    wave = calculate_wave_structure(bars=bars)
+    wave = calculate_wave_structure(bars=bars, symbol=symbol)
+    elliott = wave["elliott"]
 
     history_requirements = {
         "bollinger_volume": max(band_period, volume_period),
@@ -1923,6 +2179,15 @@ def analyze_from_query(params: dict[str, list[str]]) -> dict[str, object]:
                 "wavePivotCount": wave["wavePivotCount"],
                 "waveLegCount": wave["waveLegCount"],
                 "waveLatestLegText": wave["waveLatestLegText"],
+                "elliottSignal": elliott["elliottSignal"],
+                "elliottSignalText": elliott["elliottSignalText"],
+                "elliottBias": elliott["elliottBias"],
+                "elliottBiasText": elliott["elliottBiasText"],
+                "elliottStageText": elliott["elliottStageText"],
+                "elliottScore": elliott["elliottScore"],
+                "elliottRuleText": elliott["elliottRuleText"],
+                "elliottRiskText": elliott["elliottRiskText"],
+                "elliottReason": elliott["elliottReason"],
             }
         )
         selected.append(apply_short_history_overlay(payload))
@@ -1936,6 +2201,7 @@ def analyze_from_query(params: dict[str, list[str]]) -> dict[str, object]:
         "historyMode": selected[-1].get("historyMode") if selected else "NO_DATA",
         "historyRequirementText": selected[-1].get("historyRequirementText") if selected else "",
         "wave": wave,
+        "elliott": elliott,
         "generatedAt": datetime.now(timezone.utc).isoformat(),
         "settings": {
             "bandPeriod": band_period,

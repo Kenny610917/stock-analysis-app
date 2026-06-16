@@ -358,6 +358,50 @@ button:focus-visible {
   font-size: 14px;
 }
 
+.elliott-block {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.elliott-details {
+  display: grid;
+  gap: 9px;
+}
+
+.elliott-details p {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.elliott-details p strong {
+  color: var(--text);
+}
+
+.elliott-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.elliott-label,
+.muted-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 8px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.elliott-label strong {
+  color: var(--accent-strong);
+}
+
 .wave-legs {
   display: grid;
   gap: 10px;

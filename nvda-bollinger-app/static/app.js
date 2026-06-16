@@ -65,6 +65,10 @@ const fields = {
   waveUpdated: document.querySelector("#waveUpdated"),
   waveChart: document.querySelector("#waveChart"),
   waveLegs: document.querySelector("#waveLegs"),
+  elliottSignal: document.querySelector("#elliottSignal"),
+  elliottValues: document.querySelector("#elliottValues"),
+  elliottReason: document.querySelector("#elliottReason"),
+  elliottDetails: document.querySelector("#elliottDetails"),
   reliabilityScore: document.querySelector("#reliabilityScore"),
   reliabilitySignal: document.querySelector("#reliabilitySignal"),
   reliabilityReason: document.querySelector("#reliabilityReason"),
@@ -322,6 +326,10 @@ function renderLatest(data) {
   fields.waveSignal.textContent = latest.waveSignalText || "--";
   fields.waveValues.textContent = `${latest.waveLatestLegText || "--"} / ${formatInt(latest.wavePivotCount)} 個轉折`;
   fields.waveReason.textContent = latest.waveReason || "--";
+  const elliott = data.elliott || data.wave?.elliott || latest;
+  fields.elliottSignal.textContent = elliott.elliottSignalText || "--";
+  fields.elliottValues.textContent = `${elliott.elliottStageText || "--"} / ${formatInt(elliott.elliottScore)}分`;
+  fields.elliottReason.textContent = elliott.elliottRiskText || elliott.elliottReason || "--";
   fields.reliabilityScore.textContent = `${formatInt(latest.reliabilityScore)} / 100`;
   fields.reliabilitySignal.textContent = `${latest.reliabilityText}: ${latest.consensusText}`;
   fields.reliabilityReason.textContent = latest.reliabilityReason;
@@ -331,6 +339,36 @@ function renderLatest(data) {
   fields.lastUpdated.textContent = new Date(data.generatedAt).toLocaleString();
   fields.riskNote.textContent = data.riskNote;
   renderWave(data.wave);
+  renderElliott(elliott);
+}
+
+function renderElliott(elliott) {
+  if (!elliott) {
+    fields.elliottDetails.textContent = "--";
+    return;
+  }
+
+  const labels = Array.isArray(elliott.elliottWaveLabels) ? elliott.elliottWaveLabels : [];
+  const labelHtml = labels.length
+    ? labels
+        .map(
+          (item) => `
+            <span class="elliott-label">
+              <strong>${escapeHtml(item.label)}</strong>
+              ${escapeHtml(item.date || "--")} / ${formatNumber(item.price, 2)}
+            </span>
+          `,
+        )
+        .join("")
+    : `<span class="muted-line">尚無可標記的 1-5 或 A-B-C 序列</span>`;
+
+  fields.elliottDetails.innerHTML = `
+    <p><strong>${escapeHtml(elliott.elliottSignalText || "--")}</strong> / ${escapeHtml(elliott.elliottBiasText || "--")} / ${formatInt(elliott.elliottScore)}分</p>
+    <p>${escapeHtml(elliott.elliottReason || "--")}</p>
+    <p>${escapeHtml(elliott.elliottRuleText || "--")}</p>
+    <p>${escapeHtml(elliott.elliottRiskText || "--")}</p>
+    <div class="elliott-labels">${labelHtml}</div>
+  `;
 }
 
 function renderRows(rows) {
@@ -447,6 +485,10 @@ function renderError(message) {
   fields.waveUpdated.textContent = "--";
   fields.waveChart.innerHTML = `<text x="450" y="160" text-anchor="middle" class="wave-axis-label">--</text>`;
   fields.waveLegs.textContent = "--";
+  fields.elliottSignal.textContent = "--";
+  fields.elliottValues.textContent = "--";
+  fields.elliottReason.textContent = "--";
+  fields.elliottDetails.textContent = "--";
   fields.reliabilityScore.textContent = "--";
   fields.reliabilitySignal.textContent = "--";
   fields.reliabilityReason.textContent = "--";

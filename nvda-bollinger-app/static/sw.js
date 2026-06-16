@@ -1,9 +1,9 @@
-const CACHE_NAME = "stock-analysis-pwa-v8";
+const CACHE_NAME = "stock-analysis-pwa-v9";
 const APP_SHELL = [
   "/",
   "/index.html",
-  "/styles.css?v=wave1",
-  "/app.js?v=wave1",
+  "/styles.css?v=elliott1",
+  "/app.js?v=elliott1",
   "/manifest.webmanifest",
   "/icons/icon-192.png",
   "/icons/icon-512.png",

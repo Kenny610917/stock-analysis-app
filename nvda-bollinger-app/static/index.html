@@ -12,7 +12,7 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/icons/icon-192.png" sizes="192x192" />
     <link rel="apple-touch-icon" href="/icons/icon-192.png" />
-    <link rel="stylesheet" href="/styles.css?v=wave1" />
+    <link rel="stylesheet" href="/styles.css?v=elliott1" />
   </head>
   <body>
     <main class="app-shell">
@@ -186,6 +186,13 @@
           </article>
 
           <article class="metric-panel">
+            <span>艾略特觀察</span>
+            <strong id="elliottSignal">--</strong>
+            <small id="elliottValues">--</small>
+            <small id="elliottReason">--</small>
+          </article>
+
+          <article class="metric-panel">
             <span>可靠度</span>
             <strong id="reliabilityScore">--</strong>
             <small id="reliabilitySignal">--</small>
@@ -210,8 +217,14 @@
               <svg id="waveChart" viewBox="0 0 900 320" role="img" aria-label="波段結構圖"></svg>
             </div>
             <div class="wave-leg-panel">
-              <h3>最近波段</h3>
-              <div id="waveLegs" class="wave-legs">--</div>
+              <div>
+                <h3>最近波段</h3>
+                <div id="waveLegs" class="wave-legs">--</div>
+              </div>
+              <div class="elliott-block">
+                <h3>艾略特觀察</h3>
+                <div id="elliottDetails" class="elliott-details">--</div>
+              </div>
             </div>
           </div>
         </section>
@@ -357,6 +370,6 @@
         </footer>
       </section>
     </main>
-    <script src="/app.js?v=wave1"></script>
+    <script src="/app.js?v=elliott1"></script>
   </body>
 </html>
