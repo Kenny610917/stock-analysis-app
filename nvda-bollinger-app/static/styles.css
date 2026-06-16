@@ -187,6 +187,7 @@ button:focus-visible {
 
 .signal-panel,
 .metric-panel,
+.wave-section,
 .screener-section,
 .table-section,
 .risk-note {
@@ -280,6 +281,108 @@ button:focus-visible {
 .screener-section {
   margin-top: 16px;
   overflow: hidden;
+}
+
+.wave-section {
+  margin-top: 16px;
+  overflow: hidden;
+}
+
+.wave-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 300px);
+  gap: 0;
+}
+
+.wave-chart-wrap {
+  min-height: 320px;
+  border-right: 1px solid var(--line);
+  padding: 12px;
+}
+
+#waveChart {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-height: 280px;
+}
+
+.wave-axis {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.wave-price-line {
+  fill: none;
+  stroke: var(--accent-strong);
+  stroke-width: 2.4;
+}
+
+.wave-zigzag-line {
+  fill: none;
+  stroke: var(--warn);
+  stroke-width: 2.2;
+}
+
+.wave-volume-bar {
+  fill: rgba(15, 118, 110, 0.18);
+}
+
+.wave-pivot {
+  fill: var(--surface);
+  stroke: var(--warn);
+  stroke-width: 2;
+}
+
+.wave-pivot-label {
+  fill: var(--text);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.wave-axis-label {
+  fill: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.wave-leg-panel {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 16px;
+}
+
+.wave-leg-panel h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.wave-legs {
+  display: grid;
+  gap: 10px;
+}
+
+.wave-leg {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 10px;
+}
+
+.wave-leg:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.wave-leg strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 13px;
+}
+
+.wave-leg small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .screener-controls {
@@ -455,6 +558,15 @@ tbody tr:last-child td {
   .section-title {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .wave-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .wave-chart-wrap {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
   }
 
   .signal-panel {

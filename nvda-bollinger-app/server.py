@@ -1014,6 +1014,240 @@ def calculate_market_structure(
     return rows
 
 
+def pivot_kind_for_endpoint(bars: list[object], index: int) -> str:
+    if len(bars) <= 1:
+        return "POINT"
+    if index == 0:
+        return "LOW" if bars[1].close >= bars[0].close else "HIGH"
+    return "HIGH" if bars[index].close >= bars[index - 1].close else "LOW"
+
+
+def build_zigzag_pivots(bars: list[object], reversal_pct: float) -> list[dict[str, object]]:
+    if not bars:
+        return []
+    if len(bars) == 1:
+        return [{"index": 0, "kind": "POINT", "price": bars[0].close}]
+    if len(bars) == 2:
+        return [
+            {"index": 0, "kind": pivot_kind_for_endpoint(bars, 0), "price": bars[0].close},
+            {"index": 1, "kind": pivot_kind_for_endpoint(bars, 1), "price": bars[1].close},
+        ]
+
+    reversal = reversal_pct / 100.0
+    pivots: list[dict[str, object]] = []
+    direction: str | None = None
+    high_index = 0
+    low_index = 0
+    high_price = bars[0].close
+    low_price = bars[0].close
+    candidate_index = 0
+    candidate_price = bars[0].close
+
+    for index, bar in enumerate(bars[1:], start=1):
+        price = bar.close
+        if direction is None:
+            if price > high_price:
+                high_index = index
+                high_price = price
+            if price < low_price:
+                low_index = index
+                low_price = price
+            if low_price and price >= low_price * (1.0 + reversal):
+                pivots.append({"index": low_index, "kind": "LOW", "price": low_price})
+                direction = "UP"
+                candidate_index = index
+                candidate_price = price
+            elif high_price and price <= high_price * (1.0 - reversal):
+                pivots.append({"index": high_index, "kind": "HIGH", "price": high_price})
+                direction = "DOWN"
+                candidate_index = index
+                candidate_price = price
+            continue
+
+        if direction == "UP":
+            if price >= candidate_price:
+                candidate_index = index
+                candidate_price = price
+            elif candidate_price and price <= candidate_price * (1.0 - reversal):
+                pivots.append({"index": candidate_index, "kind": "HIGH", "price": candidate_price})
+                direction = "DOWN"
+                candidate_index = index
+                candidate_price = price
+        elif direction == "DOWN":
+            if price <= candidate_price:
+                candidate_index = index
+                candidate_price = price
+            elif candidate_price and price >= candidate_price * (1.0 + reversal):
+                pivots.append({"index": candidate_index, "kind": "LOW", "price": candidate_price})
+                direction = "UP"
+                candidate_index = index
+                candidate_price = price
+
+    if not pivots:
+        return [
+            {"index": 0, "kind": pivot_kind_for_endpoint(bars, 0), "price": bars[0].close},
+            {
+                "index": len(bars) - 1,
+                "kind": pivot_kind_for_endpoint(bars, len(bars) - 1),
+                "price": bars[-1].close,
+            },
+        ]
+
+    last_kind = "HIGH" if direction == "UP" else "LOW"
+    if pivots[-1]["index"] != candidate_index:
+        pivots.append({"index": candidate_index, "kind": last_kind, "price": candidate_price})
+    if pivots[-1]["index"] != len(bars) - 1:
+        pivots.append(
+            {
+                "index": len(bars) - 1,
+                "kind": pivot_kind_for_endpoint(bars, len(bars) - 1),
+                "price": bars[-1].close,
+            }
+        )
+    return pivots
+
+
+def label_wave_pivots(bars: list[object], pivots: list[dict[str, object]]) -> list[dict[str, object]]:
+    previous_high: float | None = None
+    previous_low: float | None = None
+    labelled: list[dict[str, object]] = []
+    for pivot in pivots:
+        kind = pivot["kind"]
+        price = float(pivot["price"])
+        label = "轉折"
+        bias = "NEUTRAL"
+        if kind == "HIGH":
+            label = "H" if previous_high is None else "HH" if price > previous_high else "LH"
+            bias = "BULLISH" if label == "HH" else "BEARISH" if label == "LH" else "NEUTRAL"
+            previous_high = price
+        elif kind == "LOW":
+            label = "L" if previous_low is None else "HL" if price > previous_low else "LL"
+            bias = "BULLISH" if label == "HL" else "BEARISH" if label == "LL" else "NEUTRAL"
+            previous_low = price
+
+        index = int(pivot["index"])
+        labelled.append(
+            {
+                "index": index,
+                "date": bars[index].date,
+                "kind": kind,
+                "label": label,
+                "price": price,
+                "bias": bias,
+            }
+        )
+    return labelled
+
+
+def calculate_wave_legs(bars: list[object], pivots: list[dict[str, object]]) -> list[dict[str, object]]:
+    legs: list[dict[str, object]] = []
+    for start, end in zip(pivots, pivots[1:]):
+        start_index = int(start["index"])
+        end_index = int(end["index"])
+        start_price = float(start["price"])
+        end_price = float(end["price"])
+        change_pct = pct_distance(start_price, end_price)
+        volume_sum = sum(bar.volume for bar in bars[min(start_index, end_index) : max(start_index, end_index) + 1])
+        direction = "UP" if end_price >= start_price else "DOWN"
+        legs.append(
+            {
+                "fromDate": bars[start_index].date,
+                "toDate": bars[end_index].date,
+                "fromLabel": start["label"],
+                "toLabel": end["label"],
+                "fromPrice": start_price,
+                "toPrice": end_price,
+                "bars": abs(end_index - start_index) + 1,
+                "changePct": change_pct,
+                "volumeSum": volume_sum,
+                "direction": direction,
+                "directionText": "上升波" if direction == "UP" else "下降波",
+            }
+        )
+    return legs
+
+
+def calculate_wave_structure(
+    bars: list[object],
+    reversal_pct: float = 3.0,
+    max_chart_points: int = 120,
+) -> dict[str, object]:
+    chart_start = max(0, len(bars) - max_chart_points)
+    chart_points = [
+        {
+            "index": chart_start + offset,
+            "date": bar.date,
+            "open": bar.open,
+            "high": bar.high,
+            "low": bar.low,
+            "close": bar.close,
+            "volume": bar.volume,
+        }
+        for offset, bar in enumerate(bars[chart_start:])
+    ]
+    pivots = label_wave_pivots(bars, build_zigzag_pivots(bars, reversal_pct))
+    legs = calculate_wave_legs(bars, pivots)
+
+    highs = [pivot for pivot in pivots if pivot["kind"] == "HIGH"]
+    lows = [pivot for pivot in pivots if pivot["kind"] == "LOW"]
+    signal = "WAVE_INSUFFICIENT"
+    signal_text = "波段未確認"
+    bias = "NO_DATA"
+    bias_text = "資料不足"
+    reason = "資料筆數或轉折點不足，先只顯示原始價格波形。"
+
+    if len(bars) >= 5 and len(highs) >= 2 and len(lows) >= 2:
+        high_up = highs[-1]["price"] > highs[-2]["price"]
+        low_up = lows[-1]["price"] > lows[-2]["price"]
+        high_down = highs[-1]["price"] < highs[-2]["price"]
+        low_down = lows[-1]["price"] < lows[-2]["price"]
+        if high_up and low_up:
+            signal = "HH_HL_UPTREND"
+            signal_text = "高低點墊高"
+            bias = "BULLISH"
+            bias_text = "偏多"
+            reason = "最近兩個波段高點與低點同步墊高，結構偏向上升波段。"
+        elif high_down and low_down:
+            signal = "LH_LL_DOWNTREND"
+            signal_text = "高低點下移"
+            bias = "BEARISH"
+            bias_text = "偏空"
+            reason = "最近兩個波段高點與低點同步下移，結構偏向下降波段。"
+        else:
+            signal = "MIXED_RANGE"
+            signal_text = "波段盤整"
+            bias = "NEUTRAL"
+            bias_text = "中性"
+            reason = "高點與低點沒有同向排列，偏向盤整或轉折觀察。"
+    elif len(bars) < 5:
+        reason = f"目前只有 {len(bars)} 筆日線，波段高低點尚未形成；至少需要 5 筆資料才開始判讀結構。"
+    elif len(pivots) < 3:
+        reason = f"目前只形成 {len(pivots)} 個轉折點，尚不足以判斷 HH/HL/LH/LL 結構。"
+
+    latest_leg = legs[-1] if legs else None
+    latest_leg_text = "--"
+    if latest_leg:
+        latest_leg_text = (
+            f"{latest_leg['directionText']} {latest_leg['changePct']:+.2f}% / "
+            f"{latest_leg['bars']} 根K"
+        )
+
+    return {
+        "waveSignal": signal,
+        "waveSignalText": signal_text,
+        "waveBias": bias,
+        "waveBiasText": bias_text,
+        "waveReason": reason,
+        "waveReversalPct": reversal_pct,
+        "wavePivotCount": len(pivots),
+        "waveLegCount": len(legs),
+        "waveLatestLegText": latest_leg_text,
+        "wavePivots": pivots[-12:],
+        "waveLegs": legs[-8:],
+        "waveChartPoints": chart_points,
+    }
+
+
 def classify_direction(value: float | None, up_threshold: float, down_threshold: float) -> str:
     if value is None:
         return "NO_DATA"
@@ -1645,6 +1879,7 @@ def analyze_from_query(params: dict[str, list[str]]) -> dict[str, object]:
         bars=bars,
         volume_price_rows=volume_price_rows,
     )
+    wave = calculate_wave_structure(bars=bars)
 
     history_requirements = {
         "bollinger_volume": max(band_period, volume_period),
@@ -1678,6 +1913,18 @@ def analyze_from_query(params: dict[str, list[str]]) -> dict[str, object]:
     ):
         payload = row_to_dict(row, kd_row, rsi_row, macd_row, structure_row, volume_price_row, box_row, dow_row)
         payload.update(calculate_history_context(bars, start_index + offset, history_requirements))
+        payload.update(
+            {
+                "waveSignal": wave["waveSignal"],
+                "waveSignalText": wave["waveSignalText"],
+                "waveBias": wave["waveBias"],
+                "waveBiasText": wave["waveBiasText"],
+                "waveReason": wave["waveReason"],
+                "wavePivotCount": wave["wavePivotCount"],
+                "waveLegCount": wave["waveLegCount"],
+                "waveLatestLegText": wave["waveLatestLegText"],
+            }
+        )
         selected.append(apply_short_history_overlay(payload))
 
     return {
@@ -1688,6 +1935,7 @@ def analyze_from_query(params: dict[str, list[str]]) -> dict[str, object]:
         "barsFetched": len(bars),
         "historyMode": selected[-1].get("historyMode") if selected else "NO_DATA",
         "historyRequirementText": selected[-1].get("historyRequirementText") if selected else "",
+        "wave": wave,
         "generatedAt": datetime.now(timezone.utc).isoformat(),
         "settings": {
             "bandPeriod": band_period,

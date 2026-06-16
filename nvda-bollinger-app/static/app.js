@@ -59,6 +59,12 @@ const fields = {
   dowSignal: document.querySelector("#dowSignal"),
   dowValues: document.querySelector("#dowValues"),
   dowReason: document.querySelector("#dowReason"),
+  waveSignal: document.querySelector("#waveSignal"),
+  waveValues: document.querySelector("#waveValues"),
+  waveReason: document.querySelector("#waveReason"),
+  waveUpdated: document.querySelector("#waveUpdated"),
+  waveChart: document.querySelector("#waveChart"),
+  waveLegs: document.querySelector("#waveLegs"),
   reliabilityScore: document.querySelector("#reliabilityScore"),
   reliabilitySignal: document.querySelector("#reliabilitySignal"),
   reliabilityReason: document.querySelector("#reliabilityReason"),
@@ -92,6 +98,21 @@ function formatCompact(value) {
   });
 }
 
+function formatSigned(value, digits = 2) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return "--";
+  const number = Number(value);
+  return `${number >= 0 ? "+" : ""}${formatNumber(number, digits)}%`;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
 function actionClass(action) {
   return String(action || "").toLowerCase();
 }
@@ -121,6 +142,96 @@ function kdReason(row) {
 function setStatus(label, state) {
   connectionStatus.textContent = label;
   connectionStatus.className = `status-pill ${state ? `is-${state}` : ""}`.trim();
+}
+
+function renderWave(wave) {
+  if (!wave || !Array.isArray(wave.waveChartPoints) || wave.waveChartPoints.length < 2) {
+    fields.waveChart.innerHTML = `<text x="450" y="160" text-anchor="middle" class="wave-axis-label">資料不足</text>`;
+    fields.waveLegs.textContent = "--";
+    fields.waveUpdated.textContent = "--";
+    return;
+  }
+
+  const points = wave.waveChartPoints;
+  const pivots = Array.isArray(wave.wavePivots) ? wave.wavePivots : [];
+  const legs = Array.isArray(wave.waveLegs) ? wave.waveLegs : [];
+  const width = 900;
+  const height = 320;
+  const left = 56;
+  const right = 22;
+  const top = 20;
+  const priceBottom = 226;
+  const volumeTop = 248;
+  const volumeHeight = 42;
+  const plotWidth = width - left - right;
+  const priceHeight = priceBottom - top;
+  const prices = points.flatMap((point) => [point.high, point.low, point.close].filter((value) => Number.isFinite(Number(value))));
+  const minPrice = Math.min(...prices);
+  const maxPrice = Math.max(...prices);
+  const pricePad = Math.max((maxPrice - minPrice) * 0.08, maxPrice * 0.005, 1);
+  const yMin = minPrice - pricePad;
+  const yMax = maxPrice + pricePad;
+  const maxVolume = Math.max(...points.map((point) => Number(point.volume) || 0), 1);
+  const indexToPosition = new Map(points.map((point, position) => [point.index, position]));
+  const xForPosition = (position) => left + (points.length === 1 ? plotWidth / 2 : (position / (points.length - 1)) * plotWidth);
+  const yForPrice = (price) => top + ((yMax - Number(price)) / (yMax - yMin)) * priceHeight;
+  const closeLine = points.map((point, position) => `${xForPosition(position).toFixed(1)},${yForPrice(point.close).toFixed(1)}`).join(" ");
+  const visiblePivots = pivots.filter((pivot) => indexToPosition.has(pivot.index));
+  const zigzagLine = visiblePivots
+    .map((pivot) => `${xForPosition(indexToPosition.get(pivot.index)).toFixed(1)},${yForPrice(pivot.price).toFixed(1)}`)
+    .join(" ");
+  const volumeBars = points
+    .map((point, position) => {
+      const x = xForPosition(position);
+      const barWidth = Math.max(2, Math.min(7, plotWidth / points.length - 1));
+      const barHeight = ((Number(point.volume) || 0) / maxVolume) * volumeHeight;
+      return `<rect class="wave-volume-bar" x="${(x - barWidth / 2).toFixed(1)}" y="${(volumeTop + volumeHeight - barHeight).toFixed(1)}" width="${barWidth.toFixed(1)}" height="${barHeight.toFixed(1)}"></rect>`;
+    })
+    .join("");
+  const pivotNodes = visiblePivots
+    .map((pivot) => {
+      const x = xForPosition(indexToPosition.get(pivot.index));
+      const y = yForPrice(pivot.price);
+      const labelY = pivot.kind === "HIGH" ? y - 12 : y + 21;
+      return `
+        <circle class="wave-pivot" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="5"></circle>
+        <text class="wave-pivot-label" x="${x.toFixed(1)}" y="${labelY.toFixed(1)}" text-anchor="middle">${escapeHtml(pivot.label)}</text>
+      `;
+    })
+    .join("");
+  const firstDate = points[0].date;
+  const lastDate = points[points.length - 1].date;
+
+  fields.waveChart.innerHTML = `
+    <line class="wave-axis" x1="${left}" y1="${top}" x2="${left}" y2="${priceBottom}"></line>
+    <line class="wave-axis" x1="${left}" y1="${priceBottom}" x2="${width - right}" y2="${priceBottom}"></line>
+    <text class="wave-axis-label" x="8" y="${top + 5}">${formatNumber(yMax, 2)}</text>
+    <text class="wave-axis-label" x="8" y="${priceBottom}">${formatNumber(yMin, 2)}</text>
+    <text class="wave-axis-label" x="${left}" y="306">${escapeHtml(firstDate)}</text>
+    <text class="wave-axis-label" x="${width - right}" y="306" text-anchor="end">${escapeHtml(lastDate)}</text>
+    ${volumeBars}
+    <polyline class="wave-price-line" points="${closeLine}"></polyline>
+    ${zigzagLine ? `<polyline class="wave-zigzag-line" points="${zigzagLine}"></polyline>` : ""}
+    ${pivotNodes}
+  `;
+
+  fields.waveUpdated.textContent = `${wave.waveSignalText || "--"} / ${formatInt(wave.wavePivotCount)} 個轉折`;
+  if (!legs.length) {
+    fields.waveLegs.textContent = "--";
+    return;
+  }
+  fields.waveLegs.innerHTML = legs
+    .slice()
+    .reverse()
+    .map(
+      (leg) => `
+        <div class="wave-leg">
+          <strong>${escapeHtml(leg.fromLabel)} → ${escapeHtml(leg.toLabel)} / ${escapeHtml(leg.directionText)} ${formatSigned(leg.changePct, 2)}</strong>
+          <small>${escapeHtml(leg.fromDate)} → ${escapeHtml(leg.toDate)} / ${formatInt(leg.bars)} 根K / 量 ${formatCompact(leg.volumeSum)}</small>
+        </div>
+      `,
+    )
+    .join("");
 }
 
 function paramsFromForm() {
@@ -208,6 +319,9 @@ function renderLatest(data) {
   fields.dowSignal.textContent = latest.dowSignalText || "--";
   fields.dowValues.textContent = `${latest.dowPrimaryTrendText || "--"} / ${latest.dowSecondaryTrendText || "--"} / ${latest.dowPhaseText || "--"} / ${formatInt(latest.dowScore)}`;
   fields.dowReason.textContent = latest.dowReason || "--";
+  fields.waveSignal.textContent = latest.waveSignalText || "--";
+  fields.waveValues.textContent = `${latest.waveLatestLegText || "--"} / ${formatInt(latest.wavePivotCount)} 個轉折`;
+  fields.waveReason.textContent = latest.waveReason || "--";
   fields.reliabilityScore.textContent = `${formatInt(latest.reliabilityScore)} / 100`;
   fields.reliabilitySignal.textContent = `${latest.reliabilityText}: ${latest.consensusText}`;
   fields.reliabilityReason.textContent = latest.reliabilityReason;
@@ -216,6 +330,7 @@ function renderLatest(data) {
   fields.planReason.textContent = `${latest.setupText}。${latest.invalidationText}。${latest.planReason}`;
   fields.lastUpdated.textContent = new Date(data.generatedAt).toLocaleString();
   fields.riskNote.textContent = data.riskNote;
+  renderWave(data.wave);
 }
 
 function renderRows(rows) {
@@ -326,6 +441,12 @@ function renderError(message) {
   fields.dowSignal.textContent = "--";
   fields.dowValues.textContent = "--";
   fields.dowReason.textContent = "--";
+  fields.waveSignal.textContent = "--";
+  fields.waveValues.textContent = "--";
+  fields.waveReason.textContent = "--";
+  fields.waveUpdated.textContent = "--";
+  fields.waveChart.innerHTML = `<text x="450" y="160" text-anchor="middle" class="wave-axis-label">--</text>`;
+  fields.waveLegs.textContent = "--";
   fields.reliabilityScore.textContent = "--";
   fields.reliabilitySignal.textContent = "--";
   fields.reliabilityReason.textContent = "--";
